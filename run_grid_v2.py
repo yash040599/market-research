@@ -120,6 +120,12 @@ def metrics_for_v2(run: PortfolioRunV2, last_close: dict[str, float],
     total_stcg = sum(s.stcg_tax for s in run.yearly_snapshots)
     total_ltcg = sum(s.ltcg_tax for s in run.yearly_snapshots)
     total_tax = total_stcg + total_ltcg
+    if run.yearly_snapshots:
+        final_snapshot = run.yearly_snapshots[-1]
+        if not np.isclose(total_stcg, final_snapshot.cumulative_stcg_tax, rtol=0, atol=0.01):
+            raise AssertionError("Annual STCG tax rows do not match final cumulative STCG tax")
+        if not np.isclose(total_ltcg, final_snapshot.cumulative_ltcg_tax, rtol=0, atol=0.01):
+            raise AssertionError("Annual LTCG tax rows do not match final cumulative LTCG tax")
 
     wr = win_rate(run.closed_trades, run.open_trades, last_close) * 100.0
 
@@ -330,13 +336,25 @@ def main() -> None:
                 "Cash_in_Hand": s.cash_in_hand,
                 "Asset_Value": s.asset_value,
                 "Total_Value": s.total_value,
-                "Realised_PnL": s.realised_pnl,
-                "STCG_Tax_20pct": s.stcg_tax,
-                "LTCG_Tax_12.5pct": s.ltcg_tax,
-                "Total_Tax": s.stcg_tax + s.ltcg_tax,
+                "Annual_Realised_PnL": s.realised_pnl,
+                "Annual_STCG_Tax_20pct": s.stcg_tax,
+                "Annual_LTCG_Tax_12.5pct": s.ltcg_tax,
+                "Annual_Total_Tax": s.total_tax,
+                "Cumulative_STCG_Tax": s.cumulative_stcg_tax,
+                "Cumulative_LTCG_Tax": s.cumulative_ltcg_tax,
+                "Cumulative_Tax": s.cumulative_tax,
                 "Net_After_Tax": s.net_after_tax,
             })
         yr_df = pd.DataFrame(yr_rows)
+        best_metric_tax = float(df.loc[
+            (df["X_pct"] == float(best_x)) & (df["Y_pct"] == float(best_y)),
+            "TotalTax_INR",
+        ].iloc[0])
+        annual_tax_sum = float(yr_df["Annual_Total_Tax"].sum())
+        if not np.isclose(best_metric_tax, annual_tax_sum, rtol=0, atol=0.01):
+            raise AssertionError(
+                "Best-combo TotalTax_INR does not equal the sum of annual tax rows"
+            )
         yr_df.to_csv(RESULTS_DIR / "yearly_breakdown.csv", index=False)
 
     # -----------------------------------------------------------------------
@@ -359,7 +377,7 @@ def main() -> None:
     md.append("1. **Finite capital**: Start with Rs.1,00,000 (not infinite money).\n")
     md.append("2. **Rs.20,000 per lot** (not Rs.10,000).\n")
     md.append("3. **Profit recycling**: Sale proceeds (principal + gain) recycled as available cash.\n")
-    md.append("4. **Taxation**: STCG @ 20% (held < 1 year), LTCG @ 12.5% (held >= 1 year).\n")
+    md.append("4. **Taxation**: Annual realised-gain taxes: STCG @ 20% (held < 1 year), LTCG @ 12.5% (held >= 1 year).\n")
 
     md.append(f"\n## Benchmark: NIFTY 50 Equal-Weight Index\n")
     md.append(f"- Rs.1,00,000 lump-sum at start\n")
@@ -393,13 +411,14 @@ def main() -> None:
     if best_run and best_run.yearly_snapshots:
         md.append(f"\n\n## Yearly Breakdown (Best combo: X={best_x}%, Y={best_y}%)\n")
         md.append(f"Starting capital: Rs.{INITIAL_CAPITAL:,.0f}\n")
-        md.append("| Year | Cum. Invested | Cash in Hand | Asset Value | Total Value | Realised P&L | STCG Tax | LTCG Tax | Net After Tax |")
-        md.append("|------|---------------|-------------|-------------|-------------|-------------|----------|----------|---------------|")
+        md.append("| Year | Cum. Invested | Cash in Hand | Asset Value | Total Value | Annual Realised P&L | Annual STCG Tax | Annual LTCG Tax | Cum. Tax | Net After Tax |")
+        md.append("|------|---------------|-------------|-------------|-------------|---------------------|-----------------|-----------------|----------|---------------|")
         for s in best_run.yearly_snapshots:
             md.append(
                 f"| {s.year} | {s.amount_invested:>13,.0f} | {s.cash_in_hand:>11,.0f} | "
                 f"{s.asset_value:>11,.0f} | {s.total_value:>11,.0f} | {s.realised_pnl:>11,.0f} | "
-                f"{s.stcg_tax:>8,.0f} | {s.ltcg_tax:>8,.0f} | {s.net_after_tax:>13,.0f} |"
+                f"{s.stcg_tax:>15,.0f} | {s.ltcg_tax:>15,.0f} | {s.cumulative_tax:>8,.0f} | "
+                f"{s.net_after_tax:>13,.0f} |"
             )
         md.append("")
 

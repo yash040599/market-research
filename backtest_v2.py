@@ -62,10 +62,20 @@ class YearlySnapshot:
     cash_in_hand: float
     asset_value: float  # MTM of open positions
     total_value: float  # cash + asset
-    realised_pnl: float
-    stcg_tax: float  # 20% on gains from trades held < 365 days
-    ltcg_tax: float  # 12.5% on gains from trades held >= 365 days
+    realised_pnl: float  # realised P&L during this calendar year
+    stcg_tax: float  # annual 20% tax on gains from trades held < 365 days
+    ltcg_tax: float  # annual 12.5% tax on gains from trades held >= 365 days
+    cumulative_stcg_tax: float
+    cumulative_ltcg_tax: float
     net_after_tax: float
+
+    @property
+    def total_tax(self) -> float:
+        return self.stcg_tax + self.ltcg_tax
+
+    @property
+    def cumulative_tax(self) -> float:
+        return self.cumulative_stcg_tax + self.cumulative_ltcg_tax
 
 
 @dataclass
@@ -136,9 +146,11 @@ def run_portfolio_v2(
 
     # For yearly snapshots
     yearly_invested: float = 0.0  # cumulative
-    yearly_realised: float = 0.0
-    yearly_stcg: float = 0.0
-    yearly_ltcg: float = 0.0
+    annual_realised: float = 0.0
+    annual_stcg_tax: float = 0.0
+    annual_ltcg_tax: float = 0.0
+    cumulative_stcg_tax: float = 0.0
+    cumulative_ltcg_tax: float = 0.0
     snapshots: list[YearlySnapshot] = []
     current_year: int | None = None
 
@@ -151,8 +163,12 @@ def run_portfolio_v2(
             _take_yearly_snapshot(
                 snapshots, current_year, yearly_invested, cash,
                 open_positions, ticker_closes, sorted_dates,
-                yearly_realised, yearly_stcg, yearly_ltcg,
+                annual_realised, annual_stcg_tax, annual_ltcg_tax,
+                cumulative_stcg_tax, cumulative_ltcg_tax,
             )
+            annual_realised = 0.0
+            annual_stcg_tax = 0.0
+            annual_ltcg_tax = 0.0
         current_year = d.year
 
         # Process each ticker for this day
@@ -176,10 +192,14 @@ def run_portfolio_v2(
                 gain = proceeds - trade.invested
                 if gain > 0:
                     if holding < 365:
-                        yearly_stcg += gain * 0.20
+                        tax = gain * 0.20
+                        annual_stcg_tax += tax
+                        cumulative_stcg_tax += tax
                     else:
-                        yearly_ltcg += gain * 0.125
-                yearly_realised += gain
+                        tax = gain * 0.125
+                        annual_ltcg_tax += tax
+                        cumulative_ltcg_tax += tax
+                annual_realised += gain
                 closed_trades.append(trade)
                 del open_positions[tkr]
 
@@ -231,7 +251,8 @@ def run_portfolio_v2(
         _take_yearly_snapshot(
             snapshots, current_year, yearly_invested, cash,
             open_positions, ticker_closes, sorted_dates,
-            yearly_realised, yearly_stcg, yearly_ltcg,
+            annual_realised, annual_stcg_tax, annual_ltcg_tax,
+            cumulative_stcg_tax, cumulative_ltcg_tax,
         )
 
     # Build open trades list & terminal MTM
@@ -287,6 +308,8 @@ def _take_yearly_snapshot(
     realised_pnl: float,
     stcg_tax: float,
     ltcg_tax: float,
+    cumulative_stcg_tax: float,
+    cumulative_ltcg_tax: float,
 ) -> None:
     asset_val = 0.0
     for tkr, trade in open_positions.items():
@@ -313,7 +336,9 @@ def _take_yearly_snapshot(
         realised_pnl=realised_pnl,
         stcg_tax=stcg_tax,
         ltcg_tax=ltcg_tax,
-        net_after_tax=total - stcg_tax - ltcg_tax,
+        cumulative_stcg_tax=cumulative_stcg_tax,
+        cumulative_ltcg_tax=cumulative_ltcg_tax,
+        net_after_tax=total - cumulative_stcg_tax - cumulative_ltcg_tax,
     ))
 
 

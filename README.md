@@ -53,6 +53,24 @@ Outputs land in `research/results/`:
 - `xirr_heatmap.png` — heatmap visualization.
 - `summary.md` — assumptions + top-5 / worst-5 + describe() stats.
 
+## V2 finite-capital run
+
+V2 keeps the same ATH-dip / fixed-gain-exit grid, but models a bounded
+cash account: Rs.1,00,000 starting capital, Rs.20,000 per lot, sale
+proceeds recycled, one open position per ticker, and skipped buys when
+cash is insufficient. Run it from this folder with:
+
+```powershell
+python validate_v2_tax.py
+python run_grid_v2.py
+```
+
+V2 tax columns are accounting-only outputs: STCG is 20% on realised gains
+held under one year and LTCG is 12.5% on realised gains held at least one
+year. Yearly rows report annual tax; cumulative tax is explicitly named
+as cumulative, and `NetAfterTax_INR` is final portfolio value less the sum
+of annual tax rows. CAGR and alpha remain pre-tax strategy metrics.
+
 ## Assumptions (also reprinted in `results/summary.md`)
 
 1. **Universe:** current (May 2026) NIFTY 50 membership held constant for
